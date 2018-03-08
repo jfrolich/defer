@@ -1,27 +1,43 @@
 defmodule Deferred.TestValue do
-  defstruct evaluated?: false, value: nil, callback: nil, chained_callbacks: []
+  defstruct evaluated?: false, value: nil, callback: nil
 
-  defimpl Deferred.Value do
-    def run_chained_callbacks(val, []), do: evaluate(val)
-
-    def run_chained_callbacks(val, [callback | callbacks]) do
-      evaluate(run_chained_callbacks(callback.(val), callbacks))
-    end
-
+  defimpl DeferredValue do
     def get_value(%Deferred.TestValue{value: value, evaluated?: true}), do: value
 
-    def evaluate(val = %Deferred.TestValue{evaluated?: true}), do: val
+    def evaluate_once(val, prev \\ nil)
 
-    def evaluate(%Deferred.TestValue{callback: callback, chained_callbacks: chained_callbacks}) do
-      evaluate(run_chained_callbacks(callback.(), chained_callbacks))
+    def evaluate_once(val = %Deferred.TestValue{evaluated?: true}, _), do: val
+
+    def evaluate_once(%Deferred.TestValue{callback: callback}, prev), do: callback.(prev)
+
+    def evaluate_once(other, _) do
+      other
     end
 
-    def evaluate(other) do
-      %Deferred.TestValue{evaluated?: true, value: other}
+    def evaluate(val, prev \\ nil)
+
+    def evaluate(val = %Deferred.TestValue{}, prev) do
+      new_val = evaluate_once(val, prev)
+      evaluate(new_val, val)
     end
 
-    def add_then(val = %{}, func) do
-      %{val | chained_callbacks: val.chained_callbacks ++ [func]}
+    def evaluate(val, _), do: val
+
+    def add_then(val = %{callback: nil}, callback) do
+      %{val | callback: callback}
+    end
+
+    def add_then(val = %{callback: previous_callback}, callback) do
+      %Deferred.TestValue{
+        val
+        | callback: fn prev ->
+            add_then(previous_callback.(prev), callback)
+          end
+      }
+    end
+
+    def add_then(val, callback) do
+      callback.(val)
     end
   end
 end
