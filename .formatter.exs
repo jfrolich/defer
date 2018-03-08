@@ -1,4 +1,10 @@
 # Used by "mix format"
 [
-  inputs: ["mix.exs", "{config,lib,test}/**/*.{ex,exs}"]
+  locals_without_parens: [defer: 2, await: 1],
+  inputs: ["mix.exs", "{config,lib,test}/**/*.{ex,exs}"],
+  export: [
+    [
+      locals_without_parens: [defer: 2, await: 1]
+    ]
+  ]
 ]

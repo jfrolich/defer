@@ -50,8 +50,8 @@ defmodule DeferredTest do
   end
 
   deferred def test do
-    val_1 = await(%ExampleDeferredValue{callback: fn _ -> 10 end})
-    val_2 = await(%ExampleDeferredValue{callback: fn _ -> 20 end})
+    val_1 = await %ExampleDeferredValue{callback: fn _ -> 10 end}
+    val_2 = await %ExampleDeferredValue{callback: fn _ -> 20 end}
 
     val_1 + val_2
   end
@@ -136,7 +136,7 @@ defmodule DeferredTest do
 
           bla =
             if input == 3 do
-              test2 = await(%ExampleDeferredValue{callback: fn _ -> input + 4 end})
+              test2 = await %ExampleDeferredValue{callback: fn _ -> input + 4 end}
               test2 + test
             end
 
@@ -195,8 +195,8 @@ defmodule DeferredTest do
     input =
       quote do
         def test do
-          val_1 = await(@test_value1)
-          val_2 = await(@test_value2)
+          val_1 = await @test_value1
+          val_2 = await @test_value2
 
           val_1 + val_2
         end
@@ -223,11 +223,11 @@ defmodule DeferredTest do
     input =
       quote do
         def test do
-          await(%ExampleDeferredValue{
+          await %ExampleDeferredValue{
             callback: fn _ ->
               5
             end
-          })
+          }
         end
       end
 
@@ -249,9 +249,9 @@ defmodule DeferredTest do
     input =
       quote do
         def test do
-          val_1 = await(nested_1())
+          val_1 = await nested_1()
 
-          val_2 = await(@test_value2)
+          val_2 = await @test_value2
 
           val_1 + val_2
         end

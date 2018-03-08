@@ -4,6 +4,13 @@ defmodule Deferred.MixProject do
   def project do
     [
       app: :defer,
+      description: "Deferrables for Elixir",
+      files: ["lib", "priv", "mix.exs", "README.md", "CHANGELOG.md", ".formatter.exs"],
+      maintainers: [
+        "Jaap Frolich"
+      ],
+      licenses: ["MIT"],
+      links: %{github: "https://github.com/jfrolich/defer"},
       version: "0.1.0",
       elixir: "~> 1.6",
       start_permanent: Mix.env() == :prod,
