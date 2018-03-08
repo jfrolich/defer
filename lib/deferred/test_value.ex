@@ -1,14 +1,14 @@
-defmodule Deferred.TestValue do
+defmodule Defer.ExampleDeferredValue do
   defstruct evaluated?: false, value: nil, callback: nil
 
-  defimpl DeferredValue do
-    def get_value(%Deferred.TestValue{value: value, evaluated?: true}), do: value
+  defimpl Deferred do
+    def get_value(%Defer.ExampleDeferredValue{value: value, evaluated?: true}), do: value
 
     def evaluate_once(val, prev \\ nil)
 
-    def evaluate_once(val = %Deferred.TestValue{evaluated?: true}, _), do: val
+    def evaluate_once(val = %Defer.ExampleDeferredValue{evaluated?: true}, _), do: val
 
-    def evaluate_once(%Deferred.TestValue{callback: callback}, prev), do: callback.(prev)
+    def evaluate_once(%Defer.ExampleDeferredValue{callback: callback}, prev), do: callback.(prev)
 
     def evaluate_once(other, _) do
       other
@@ -16,7 +16,7 @@ defmodule Deferred.TestValue do
 
     def evaluate(val, prev \\ nil)
 
-    def evaluate(val = %Deferred.TestValue{}, prev) do
+    def evaluate(val = %Defer.ExampleDeferredValue{}, prev) do
       new_val = evaluate_once(val, prev)
       evaluate(new_val, val)
     end
@@ -28,7 +28,7 @@ defmodule Deferred.TestValue do
     end
 
     def add_then(val = %{callback: previous_callback}, callback) do
-      %Deferred.TestValue{
+      %Defer.ExampleDeferredValue{
         val
         | callback: fn prev ->
             add_then(previous_callback.(prev), callback)

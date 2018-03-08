@@ -1,7 +1,4 @@
-defprotocol DeferredValue do
-  @moduledoc """
-  Documentation for Deferred.
-  """
+defprotocol Deferred do
   @spec evaluate(t) :: t
   def evaluate(deferred_value)
 
@@ -15,7 +12,7 @@ defprotocol DeferredValue do
   def add_then(deferred_value, callback)
 end
 
-defmodule Deferred do
+defmodule Defer do
   defp get_await(expression, deep \\ false)
   defp get_await(expr = {:await, _ctx, _args}, _), do: expr
 
@@ -178,12 +175,12 @@ defmodule Deferred do
   def then(nil, func), do: func
 
   def then(deferred_value, func) do
-    DeferredValue.add_then(
+    Deferred.add_then(
       deferred_value,
       func
     )
   end
 
-  def evaluate(deferred_value), do: DeferredValue.evaluate(deferred_value)
-  def get_value(deferred_value), do: DeferredValue.get_value(deferred_value)
+  def evaluate(deferred_value), do: Deferred.evaluate(deferred_value)
+  def get_value(deferred_value), do: Deferred.get_value(deferred_value)
 end

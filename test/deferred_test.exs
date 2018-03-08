@@ -1,12 +1,12 @@
 defmodule DeferredTest do
   use ExUnit.Case
   doctest Deferred
-  import Deferred
-  alias Deferred.TestValue
+  import Defer
+  alias Defer.ExampleDeferredValue
 
   defp do_rewrite(fun_ast) do
     {:def, def_ctx, [fun_name, [{:do, do_block}]]} = fun_ast
-    Deferred.rewrite_fun({:def, def_ctx, [fun_name]}, [{:do, do_block}])
+    rewrite_fun({:def, def_ctx, [fun_name]}, [{:do, do_block}])
   end
 
   def ast_to_string(ast) do
@@ -40,31 +40,31 @@ defmodule DeferredTest do
 
     then_val =
       then(
-        %TestValue{
+        %ExampleDeferredValue{
           callback: first_callback
         },
         second_callback
       )
 
-    assert %TestValue{} = then_val
+    assert %ExampleDeferredValue{} = then_val
   end
 
   deferred def test do
-    val_1 = await(%TestValue{callback: fn _ -> 10 end})
-    val_2 = await(%TestValue{callback: fn _ -> 20 end})
+    val_1 = await(%ExampleDeferredValue{callback: fn _ -> 10 end})
+    val_2 = await(%ExampleDeferredValue{callback: fn _ -> 20 end})
 
     val_1 + val_2
   end
 
   test "defer macro" do
-    assert %TestValue{evaluated?: false} = test()
+    assert %ExampleDeferredValue{evaluated?: false} = test()
     assert evaluate(test()) == 30
   end
 
   test "test correct evaluation" do
     deferred_value =
       then(
-        %TestValue{
+        %ExampleDeferredValue{
           callback: fn _ ->
             1
           end
@@ -73,7 +73,7 @@ defmodule DeferredTest do
           val1 = deferred_1__
 
           then(
-            %TestValue{
+            %ExampleDeferredValue{
               callback: fn _ ->
                 2
               end
@@ -98,7 +98,7 @@ defmodule DeferredTest do
 
   #         test2 =
   #           case test do
-  #             input = 1 -> await(%TestValue{callback: fn -> input + 2 end})
+  #             input = 1 -> await(%ExampleDeferredValue{callback: fn -> input + 2 end})
   #             input -> 100
   #           end
 
@@ -113,7 +113,7 @@ defmodule DeferredTest do
 
   #         then(
   #           case test do
-  #             input = 1 -> %TestValue{callback: fn -> input + 2 end}
+  #             input = 1 -> %ExampleDeferredValue{callback: fn -> input + 2 end}
   #             input -> 100
   #           end,
   #           fn deferred_1__ ->
@@ -136,7 +136,7 @@ defmodule DeferredTest do
 
           bla =
             if input == 3 do
-              test2 = await(%TestValue{callback: fn _ -> input + 4 end})
+              test2 = await(%ExampleDeferredValue{callback: fn _ -> input + 4 end})
               test2 + test
             end
 
@@ -151,13 +151,13 @@ defmodule DeferredTest do
 
           then(
             if input == 3 do
-              then(%TestValue{callback: fn _ -> input + 4 end}, fn deferred_a6117 ->
-                test2 = deferred_a6117
+              then(%ExampleDeferredValue{callback: fn _ -> input + 4 end}, fn deferred_abe29 ->
+                test2 = deferred_abe29
                 test2 + test
               end)
             end,
-            fn deferred_ca79f ->
-              bla = deferred_ca79f
+            fn deferred_1dbe6 ->
+              bla = deferred_1dbe6
               bla + test
             end
           )
@@ -223,7 +223,7 @@ defmodule DeferredTest do
     input =
       quote do
         def test do
-          await(%TestValue{
+          await(%ExampleDeferredValue{
             callback: fn _ ->
               5
             end
@@ -234,7 +234,7 @@ defmodule DeferredTest do
     expected_output =
       quote do
         def test do
-          %TestValue{
+          %ExampleDeferredValue{
             callback: fn _ ->
               5
             end
