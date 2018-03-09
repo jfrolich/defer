@@ -1,15 +1,25 @@
-defprotocol Deferred do
-  @spec evaluate(t) :: t
-  def evaluate(deferred_value)
+defprotocol Deferrable do
+  @fallback_to_any true
 
-  @spec evaluate_once(t) :: t
-  def evaluate_once(deferred_value)
+  @spec evaluate(t, list) :: t
+  def evaluate(deferrable, opts \\ [])
 
-  @spec get_value(t) :: any | nil
-  def get_value(deferred_value)
+  @spec evaluate_once(t, list) :: t
+  def evaluate_once(deferrable, opts \\ [])
 
-  @spec add_then(t, callback: (any -> any)) :: t
-  def add_then(deferred_value, callback)
+  @spec get_value(t, list) :: any | nil
+  def get_value(deferrable, opts \\ [])
+
+  @spec then(t, callback: (any -> any)) :: t
+  def then(deferrable, callback)
+end
+
+defimpl Deferrable, for: Any do
+  def new(_opts \\ []), do: nil
+  def evaluate(val, _opts \\ []), do: val
+  def evaluate_once(val, _opts \\ []), do: val
+  def get_value(val, _opts \\ []), do: val
+  def then(val, callback) when is_function(callback, 1), do: callback.(val)
 end
 
 defmodule Defer do
@@ -172,15 +182,20 @@ defmodule Defer do
     rewrite_fun(definition, do_block)
   end
 
-  def then(nil, func), do: func
-
   def then(deferred_value, func) do
-    Deferred.add_then(
+    Deferrable.then(
       deferred_value,
       func
     )
   end
 
-  def evaluate(deferred_value), do: Deferred.evaluate(deferred_value)
-  def get_value(deferred_value), do: Deferred.get_value(deferred_value)
+  def evaluate_once(val, opts \\ []) do
+    Deferrable.evaluate_once(val, opts)
+  end
+
+  def evaluate(val, opts \\ []) do
+    Deferrable.evaluate(val, opts)
+  end
+
+  def get_value(deferred_value, opts \\ []), do: Deferrable.get_value(deferred_value, opts)
 end

@@ -1,4 +1,4 @@
-defmodule Deferred.MixProject do
+defmodule Defer.MixProject do
   use Mix.Project
 
   def project do
