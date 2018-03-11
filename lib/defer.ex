@@ -15,10 +15,41 @@ defprotocol Deferrable do
 end
 
 defimpl Deferrable, for: Any do
+  defp module_from_list(list) do
+    [%{__struct__: module} | _] = list
+
+    if Enum.any?(list, fn %{__struct__: m} -> m != module end),
+      do: raise("Cannot evaluated mixed deferrables")
+
+    module
+  end
+
   def new(_opts \\ []), do: nil
-  def evaluate(val, _opts \\ []), do: val
-  def evaluate_once(val, _opts \\ []), do: val
-  def get_value(val, _opts \\ []), do: val
+
+  def evaluate(val, opts \\ [])
+
+  def evaluate(val, opts) when is_list(val) do
+    module_from_list(val).evaluate(val, opts)
+  end
+
+  def evaluate(val, _opts), do: val
+
+  def evaluate_once(val, opts \\ [])
+
+  def evaluate_once(val, _opts) when is_list(val) do
+    module_from_list(val).evaluate_once(val)
+  end
+
+  def evaluate_once(val, _opts), do: val
+
+  def get_value(val, opts \\ [])
+
+  def get_value(vals, opts) when is_list(vals) do
+    module_from_list(vals).get_value(vals, opts)
+  end
+
+  def get_value(val, _opts), do: val
+
   def then(val, callback) when is_function(callback, 1), do: callback.(val)
 end
 
@@ -72,7 +103,7 @@ defmodule Defer do
   end
 
   defp expression_to_var_name(expr) do
-    :"deferred_#{fun_to_hash(expr)}"
+    :"defer_#{fun_to_hash(expr)}"
   end
 
   defp wrap(expr, lines, await) do
@@ -175,7 +206,7 @@ defmodule Defer do
     {:def, fun_ctx, [fun_name, [do: rewrite(expr)]]}
   end
 
-  defmacro deferred(
+  defmacro defer(
              definition,
              do_block
            ) do

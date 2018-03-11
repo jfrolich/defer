@@ -49,7 +49,7 @@ defmodule DeferTest do
     assert %ExampleDeferrable{} = then_val
   end
 
-  deferred def test do
+  defer def test do
     val_1 = await %ExampleDeferrable{callback: fn _ -> 10 end}
     val_2 = await %ExampleDeferrable{callback: fn _ -> 20 end}
 
@@ -151,13 +151,13 @@ defmodule DeferTest do
 
           then(
             if input == 3 do
-              then(%ExampleDeferrable{callback: fn _ -> input + 4 end}, fn deferred_f7df0 ->
-                test2 = deferred_f7df0
+              then(%ExampleDeferrable{callback: fn _ -> input + 4 end}, fn defer_f7df0 ->
+                test2 = defer_f7df0
                 test2 + test
               end)
             end,
-            fn deferred_da23e ->
-              bla = deferred_da23e
+            fn defer_26798 ->
+              bla = defer_26798
               bla + test
             end
           )
@@ -179,9 +179,9 @@ defmodule DeferTest do
     expected_output =
       quote do
         def test(input) do
-          then(@test_value1, fn deferred_9f8d3 ->
-            then(@test_value2, fn deferred_bdaeb ->
-              bla = compare(deferred_9f8d3, deferred_bdaeb)
+          then(@test_value1, fn defer_9f8d3 ->
+            then(@test_value2, fn defer_bdaeb ->
+              bla = compare(defer_9f8d3, defer_bdaeb)
               IO.inspect(bla)
             end)
           end)
@@ -205,11 +205,11 @@ defmodule DeferTest do
     expected_output =
       quote do
         def test do
-          then(@test_value1, fn deferred_9f8d3 ->
-            val_1 = deferred_9f8d3
+          then(@test_value1, fn defer_9f8d3 ->
+            val_1 = defer_9f8d3
 
-            then(@test_value2, fn deferred_bdaeb ->
-              val_2 = deferred_bdaeb
+            then(@test_value2, fn defer_bdaeb ->
+              val_2 = defer_bdaeb
               val_1 + val_2
             end)
           end)
@@ -260,11 +260,11 @@ defmodule DeferTest do
     expected_output =
       quote do
         def test do
-          then(nested_1(), fn deferred_5a695 ->
-            val_1 = deferred_5a695
+          then(nested_1(), fn defer_5a695 ->
+            val_1 = defer_5a695
 
-            then(@test_value2, fn deferred_bdaeb ->
-              val_2 = deferred_bdaeb
+            then(@test_value2, fn defer_bdaeb ->
+              val_2 = defer_bdaeb
               val_1 + val_2
             end)
           end)
