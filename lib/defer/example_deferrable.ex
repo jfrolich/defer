@@ -9,20 +9,20 @@ defmodule Defer.ExampleDeferrable do
   defimpl Deferrable do
     def get_value(val, opts \\ [])
     def get_value(%ExampleDeferrable{value: value, evaluated?: true}, _opts), do: value
-    def get_value(val, opts), do: evaluate(val, opts) |> get_value(opts)
+    def get_value(val, opts), do: run(val, opts) |> get_value(opts)
 
-    def evaluate_once(val, opts \\ [])
+    def run_once(val, opts \\ [])
 
-    def evaluate_once(val = %ExampleDeferrable{evaluated?: true}, _), do: val
+    def run_once(val = %ExampleDeferrable{evaluated?: true}, _), do: val
 
-    def evaluate_once(%ExampleDeferrable{callback: callback}, opts), do: callback.(opts[:prev])
+    def run_once(%ExampleDeferrable{callback: callback}, opts), do: callback.(opts[:prev])
 
-    def evaluate(val = %{evaluated?: true}), do: val
+    def run(val = %{evaluated?: true}), do: val
 
-    def evaluate(val, opts) do
+    def run(val, opts) do
       val
-      |> Deferrable.evaluate_once(opts[:prev])
-      |> Deferrable.evaluate([[prev: val] | opts])
+      |> Deferrable.run_once(opts[:prev])
+      |> Deferrable.run([[prev: val] | opts])
     end
 
     def then(val = %{callback: nil}, callback) do

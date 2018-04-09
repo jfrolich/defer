@@ -1,11 +1,11 @@
 defprotocol Deferrable do
   @fallback_to_any true
 
-  @spec evaluate(t, list) :: t
-  def evaluate(deferrable, opts \\ [])
+  @spec run(t, list) :: t
+  def run(deferrable, opts \\ [])
 
-  @spec evaluate_once(t, list) :: t
-  def evaluate_once(deferrable, opts \\ [])
+  @spec run_once(t, list) :: t
+  def run_once(deferrable, opts \\ [])
 
   @spec get_value(t, list) :: any | nil
   def get_value(deferrable, opts \\ [])
@@ -32,15 +32,15 @@ defimpl Deferrable, for: Any do
     module_from_list(val).evaluate(val, opts)
   end
 
-  def evaluate(val, _opts), do: val
+  def run(val, _opts), do: val
 
-  def evaluate_once(val, opts \\ [])
+  def run_once(val, opts \\ [])
 
-  def evaluate_once(val, _opts) when is_list(val) do
+  def run_once(val, _opts) when is_list(val) do
     module_from_list(val).evaluate_once(val)
   end
 
-  def evaluate_once(val, _opts), do: val
+  def run_once(val, _opts), do: val
 
   def get_value(val, opts \\ [])
 
@@ -332,11 +332,11 @@ defmodule Defer do
   end
 
   def evaluate_once(val, opts \\ []) do
-    Deferrable.evaluate_once(val, opts)
+    Deferrable.run_once(val, opts)
   end
 
   def evaluate(val, opts \\ []) do
-    Deferrable.evaluate(val, opts)
+    Deferrable.run(val, opts)
   end
 
   def get_value(deferred_value, opts \\ []), do: Deferrable.get_value(deferred_value, opts)
