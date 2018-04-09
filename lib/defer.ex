@@ -54,25 +54,30 @@ defimpl Deferrable, for: Any do
 end
 
 defmodule Defer do
-  defp get_await(expression, deep \\ false)
-  defp get_await(expr = {:await, _ctx, _args}, _), do: expr
+  defp get_await(expression = {_, _, _}, deep, env) do
+    do_get_await(Macro.expand(expression, env), deep, env)
+  end
 
-  defp get_await({:__block__, _, _}, false) do
+  defp get_await(expression, deep, env), do: do_get_await(expression, deep, env)
+
+  defp do_get_await(expression, deep, env)
+  defp do_get_await(expr = {:await, _ctx, _args}, _, _env), do: expr
+  defp do_get_await({:__block__, _, _}, false, _env), do: nil
+
+  defp do_get_await({:case, _ctx, _args}, false, _env) do
     nil
   end
 
-  defp get_await({_fun, _ctx, args}, deep) when is_list(args), do: get_await(args, deep)
+  defp do_get_await([], _, _env), do: nil
 
-  defp get_await({:do, block}, deep) do
-    get_await(block, deep)
-  end
+  defp do_get_await([arg | args], deep, env),
+    do: get_await(arg, deep, env) || get_await(args, deep, env)
 
-  defp get_await([], _), do: nil
-  defp get_await([arg | args], deep), do: get_await(arg, deep) || get_await(args, deep)
+  defp do_get_await({_fun, _ctx, args}, deep, env) when is_list(args),
+    do: get_await(args, deep, env)
 
-  defp get_await(_expr, _) do
-    nil
-  end
+  defp do_get_await({:do, block}, deep, env), do: get_await(block, deep, env)
+  defp do_get_await(_expr, _, _env), do: nil
 
   defp replace_expression(await, await, replacement), do: replacement
 
@@ -93,8 +98,10 @@ defmodule Defer do
     :crypto.hash(:md5, binary)
   end
 
-  defp fun_to_hash(fun) do
-    fun
+  # stable variable name from an ast
+  defp ast_to_hash(ast) do
+    ast
+    |> Macro.to_string()
     |> :erlang.term_to_binary()
     |> md5_hash
     |> Base.encode16()
@@ -103,18 +110,48 @@ defmodule Defer do
   end
 
   defp expression_to_var_name(expr) do
-    :"defer_#{fun_to_hash(expr)}"
+    :"defer_#{ast_to_hash(expr)}"
   end
 
-  defp wrap(expr, lines, await) do
+  defp wrap_with([clause | clauses], await, env, []) do
     {:await, _, [deferred_val]} = await
 
-    var = Macro.var(expression_to_var_name(await), nil)
+    var = Macro.var(expression_to_var_name(deferred_val), nil)
+    substituted_clause = substitute(clause, await, var)
+
+    quote do
+      then(unquote(deferred_val), fn unquote(var) ->
+        unquote(rewrite_with_clauses([substituted_clause | clauses], env))
+      end)
+    end
+  end
+
+  defp wrap_with([clause | clauses], await, env, coll) do
+    {:await, _, [deferred_val]} = await
+
+    var = Macro.var(expression_to_var_name(deferred_val), nil)
+    substituted_clause = substitute(clause, await, var)
+
+    quote do
+      with(unquote_splicing(coll)) do
+        then(unquote(deferred_val), fn unquote(var) ->
+          unquote(rewrite_with_clauses([substituted_clause | clauses], env))
+        end)
+      end
+    end
+  end
+
+  # a await expression has been found in the current line,
+  # and it can be directly wrapped
+  defp wrap_lines([line | lines], await, env) do
+    {:await, _, [deferred_val]} = await
+
+    var = Macro.var(expression_to_var_name(deferred_val), nil)
 
     lines =
-      [expr | lines]
+      [line | lines]
       |> replace_expression(await, var)
-      |> rewrite_lines()
+      |> rewrite_lines(env)
 
     quote do
       then(unquote(deferred_val), fn unquote(var) ->
@@ -123,94 +160,168 @@ defmodule Defer do
     end
   end
 
-  defp wrap_deep({:=, ctx, [assignment, expr]}, lines, _) do
-    expr = rewrite(expr)
+  defp substitute(ast, find, replace, coll \\ [])
 
-    var = Macro.var(expression_to_var_name(expr), nil)
+  defp substitute(find, find, replace, _) do
+    replace
+  end
 
-    lines =
-      [{:=, ctx, [assignment, var]} | lines]
-      |> rewrite_lines()
+  defp substitute({fun, ctx, args}, find, replace, _) do
+    {fun, ctx, substitute(args, find, replace)}
+  end
+
+  defp substitute([find | args], find, replace, coll) do
+    coll ++ [replace | args]
+  end
+
+  defp substitute([arg | args], find, replace, coll) do
+    substitute(args, find, replace, coll ++ [arg])
+  end
+
+  defp remove_binding({:=, _ctx, [_binding, expr]}), do: expr
+  defp remove_binding(other), do: other
+
+  defp to_wrapped_line({:=, ctx, [binding, _expr]}, var) do
+    {:=, ctx, [binding, var]}
+  end
+
+  defp to_wrapped_line(_line, var), do: var
+
+  defp wrap_lines_deep([line | lines], _await, env) do
+    line = rewrite(line, env)
+    var = Macro.var(expression_to_var_name(line), nil)
+    lines = rewrite_lines([to_wrapped_line(line, var) | lines], env)
 
     quote do
-      then(unquote(expr), fn unquote(var) ->
+      then(unquote(remove_binding(line)), fn unquote(var) ->
         (unquote_splicing(lines))
       end)
     end
   end
 
-  defp wrap_deep(expr, lines, _) do
-    expr = rewrite(expr)
+  defp do_rewrite_lines(await, await_deep, lines, env)
 
-    var = Macro.var(expression_to_var_name(expr), nil)
+  defp do_rewrite_lines(nil, nil, [line | lines], env),
+    do: [rewrite(line, env) | rewrite_lines(lines, env)]
 
-    lines =
-      [var | lines]
-      |> rewrite_lines()
+  defp do_rewrite_lines(nil, await_deep, [line | lines], env),
+    do: [wrap_lines_deep([line | lines], await_deep, env)]
 
-    quote do
-      then(unquote(expr), fn unquote(var) ->
-        (unquote_splicing(lines))
-      end)
-    end
+  defp do_rewrite_lines(await, _, [line | lines], env),
+    do: [wrap_lines([line | lines], await, env)]
+
+  defp rewrite_lines([], _), do: []
+
+  # single line or last line
+  defp rewrite_lines([line], env) do
+    [rewrite(line, env)]
   end
 
-  defp rewrite_lines([]), do: []
+  defp rewrite_lines([line | lines], env) do
+    await_shallow = get_await(line, false, env)
+    await_deep = get_await(line, true, env)
 
-  defp rewrite_lines([line | lines]) do
-    await_deep = get_await(line, true)
-    await_shallow = get_await(line)
-
-    if await_deep do
-      if await_shallow do
-        [wrap(line, lines, await_shallow)]
-      else
-        [wrap_deep(line, lines, await_deep)]
-      end
-    else
-      [rewrite(line) | rewrite_lines(lines)]
-    end
+    do_rewrite_lines(await_shallow, await_deep, [line | lines], env)
   end
 
-  defp rewrite({:__block__, ctx, lines}) do
-    {:__block__, ctx, rewrite_lines(lines)}
+  defp rewrite_matches([], _env), do: []
+
+  defp rewrite_matches([{:->, ctx, [pattern, block]} | matches], env) do
+    [{:->, ctx, [pattern, rewrite(block, env)]} | rewrite_matches(matches, env)]
   end
 
-  defp rewrite([{:do, block}]), do: [{:do, rewrite(block)}]
+  defp do_rewrite_with_clauses(await, await_deep, clauses, env, coll)
 
-  defp rewrite({:await, _, [fun]}) do
+  defp do_rewrite_with_clauses(nil, nil, [clause | clauses], env, coll),
+    do: rewrite_with_clauses(clauses, env, coll ++ [rewrite(clause, env)])
+
+  defp do_rewrite_with_clauses(nil, _await, [_clause | _clauses], _env, _coll),
+    do: raise("Wrap deep not yet implemented for with statement")
+
+  defp do_rewrite_with_clauses(await, _, [clause | clauses], env, coll),
+    do: wrap_with([clause | clauses], await, env, coll)
+
+  defp rewrite_with_clauses(clauses, env, coll \\ [])
+
+  defp rewrite_with_clauses([], env, [{:do, do_block}]), do: rewrite(do_block, env)
+  defp rewrite_with_clauses([], _env, coll), do: {:with, [], coll}
+
+  defp rewrite_with_clauses([{:do, do_block} | other_clauses], env, coll) do
+    rewrite_with_clauses([], env, coll ++ [{:do, rewrite(do_block, env)} | other_clauses])
+  end
+
+  defp rewrite_with_clauses([clause | clauses], env, coll) do
+    await_shallow = get_await(clause, false, env)
+    await_deep = get_await(clause, true, env)
+    do_rewrite_with_clauses(await_shallow, await_deep, [clause | clauses], env, coll)
+  end
+
+  defp rewrite({:__block__, ctx, lines}, env) do
+    {:__block__, ctx, rewrite_lines(lines, env)}
+  end
+
+  defp rewrite({:with, _ctx, clauses}, env) do
+    rewrite_with_clauses(clauses, env)
+  end
+
+  defp rewrite({:case, ctx, [test, [do: lines]]}, env) do
+    {:case, ctx, [rewrite(test, env), [do: rewrite_matches(lines, env)]]}
+  end
+
+  defp rewrite({:->, env, lines}, env) when is_list(lines), do: rewrite_lines(lines, env)
+
+  defp rewrite({:->, env, lines}, env), do: rewrite(lines, env)
+
+  defp rewrite([{:do, block}], env), do: [{:do, rewrite(block, env)}]
+
+  defp rewrite({:await, _, [fun]}, _env) do
     # just remove the keyword
     fun
   end
 
-  defp rewrite(_expression = {form, ctx, args}) when is_list(args) do
-    {form, ctx, rewrite_args(args)}
+  defp rewrite(expression = {form, ctx, args}, env) when is_list(args) do
+    expanded_expression = Macro.expand(expression, env)
+
+    if expanded_expression == expression do
+      {form, ctx, rewrite_args(args, env)}
+    else
+      rewrite(expanded_expression, env)
+    end
   end
 
-  defp rewrite({form, ctx, args}), do: {form, ctx, args}
+  defp rewrite(expression = {form, ctx, args}, env) do
+    expanded_expression = Macro.expand(expression, env)
 
-  defp rewrite(exp) do
+    if expanded_expression == expression do
+      {form, ctx, args}
+    else
+      rewrite(expanded_expression, env)
+    end
+  end
+
+  defp rewrite(exp, _env) do
     exp
   end
 
-  defp rewrite_args([]), do: []
+  defp rewrite_args([], _env), do: []
 
-  defp rewrite_args([arg | args]) do
-    [rewrite(arg) | rewrite_args(args)]
+  defp rewrite_args([arg | args], env) do
+    [rewrite(arg, env) | rewrite_args(args, env)]
   end
 
-  def rewrite_fun(
+  def rewrite(
         {:def, fun_ctx, [fun_name]},
-        do: expr = {_, _, _}
+        do_block,
+        env
       ) do
-    {:def, fun_ctx, [fun_name, [do: rewrite(expr)]]}
+    {:def, fun_ctx, [fun_name, rewrite(do_block, env)]}
   end
 
   defmacro defer(
              definition,
              do_block
            ) do
-    rewrite_fun(definition, do_block)
+    rewrite(definition, do_block, __CALLER__)
   end
 
   def then(deferred_value, func) do

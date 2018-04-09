@@ -5,8 +5,8 @@ defmodule DeferTest do
   alias Defer.ExampleDeferrable
 
   defp do_rewrite(fun_ast) do
-    {:def, def_ctx, [fun_name, [{:do, do_block}]]} = fun_ast
-    rewrite_fun({:def, def_ctx, [fun_name]}, [{:do, do_block}])
+    {:def, def_ctx, [fun_name, do_block]} = fun_ast
+    rewrite({:def, def_ctx, [fun_name]}, do_block, __ENV__)
   end
 
   def ast_to_string(ast) do
@@ -90,43 +90,144 @@ defmodule DeferTest do
     assert evaluate(deferred_value) == 3
   end
 
-  # test "a case statement" do
-  #   input =
-  #     quote do
-  #       def test(input) do
-  #         test = 1
+  test "a case statement" do
+    input =
+      quote do
+        def test(input) do
+          test = 1
 
-  #         test2 =
-  #           case test do
-  #             input = 1 -> await(%ExampleDeferrable{callback: fn -> input + 2 end})
-  #             input -> 100
-  #           end
+          test2 =
+            case test do
+              input = 1 -> await(%ExampleDeferrable{callback: fn -> input + 2 end})
+              input -> 100
+            end
 
-  #         test + test2
-  #       end
-  #     end
+          test + test2
+        end
+      end
 
-  #   expected_output =
-  #     quote do
-  #       def test(input) do
-  #         test = 1
+    expected_output =
+      quote do
+        def test(input) do
+          test = 1
 
-  #         then(
-  #           case test do
-  #             input = 1 -> %ExampleDeferrable{callback: fn -> input + 2 end}
-  #             input -> 100
-  #           end,
-  #           fn deferred_1__ ->
-  #             test2 = deferred_1__
+          then(
+            case test do
+              input = 1 -> %ExampleDeferrable{callback: fn -> input + 2 end}
+              input -> 100
+            end,
+            fn defer_4062a ->
+              test2 = defer_4062a
 
-  #             test + test2
-  #           end
-  #         )
-  #       end
-  #     end
+              test + test2
+            end
+          )
+        end
+      end
 
-  #   assert assert_output(input, expected_output)
-  # end
+    assert assert_output(input, expected_output)
+  end
+
+  test "an if statement" do
+    input =
+      quote do
+        def test(input) do
+          test = 1
+
+          test2 =
+            if test == 1 do
+              await(%ExampleDeferrable{callback: fn -> input + 2 end})
+            else
+              100
+            end
+
+          test + test2
+        end
+      end
+
+    expected_output =
+      quote do
+        def test(input) do
+          test = 1
+
+          then(
+            case(test == 1) do
+              x when Kernel.in(x, [false, nil]) ->
+                100
+
+              _ ->
+                %ExampleDeferrable{callback: fn -> input + 2 end}
+            end,
+            fn defer_027ad ->
+              test2 = defer_027ad
+              test + test2
+            end
+          )
+        end
+      end
+
+    assert assert_output(input, expected_output)
+  end
+
+  test "simple with statement" do
+    input =
+      quote do
+        def test(input) do
+          with 1 <- await(%ExampleDeferrable{callback: fn _ -> 1 end}) do
+            :ok
+          end
+        end
+      end
+
+    expected_output =
+      quote do
+        def test(input) do
+          then(%ExampleDeferrable{callback: fn _ -> 1 end}, fn defer_9fffe ->
+            with 1 <- defer_9fffe do
+              :ok
+            end
+          end)
+        end
+      end
+
+    assert assert_output(input, expected_output)
+  end
+
+  test "complex with statement" do
+    input =
+      quote do
+        def test(input) do
+          with :ok <- :ok,
+               1 <- await(%ExampleDeferrable{callback: fn _ -> 1 end}),
+               :ok <- :ok,
+               1 <- await(%ExampleDeferrable{callback: fn _ -> 2 end}),
+               :ok <- :ok do
+            :ok
+          end
+        end
+      end
+
+    expected_output =
+      quote do
+        def test(input) do
+          with :ok <- :ok do
+            then(%ExampleDeferrable{callback: fn _ -> 1 end}, fn defer_9fffe ->
+              with 1 <- defer_9fffe,
+                   :ok <- :ok do
+                then(%ExampleDeferrable{callback: fn _ -> 2 end}, fn defer_c327e ->
+                  with 1 <- defer_c327e,
+                       :ok <- :ok do
+                    :ok
+                  end
+                end)
+              end
+            end)
+          end
+        end
+      end
+
+    assert assert_output(input, expected_output)
+  end
 
   test "await in a nested block" do
     input =
@@ -150,14 +251,18 @@ defmodule DeferTest do
           test = 1
 
           then(
-            if input == 3 do
-              then(%ExampleDeferrable{callback: fn _ -> input + 4 end}, fn defer_f7df0 ->
-                test2 = defer_f7df0
-                test2 + test
-              end)
+            case(input == 3) do
+              x when Kernel.in(x, [false, nil]) ->
+                nil
+
+              _ ->
+                then(%ExampleDeferrable{callback: fn _ -> input + 4 end}, fn defer_bcc0f ->
+                  test2 = defer_bcc0f
+                  test2 + test
+                end)
             end,
-            fn defer_26798 ->
-              bla = defer_26798
+            fn defer_144b3 ->
+              bla = defer_144b3
               bla + test
             end
           )
@@ -179,9 +284,9 @@ defmodule DeferTest do
     expected_output =
       quote do
         def test(input) do
-          then(@test_value1, fn defer_9f8d3 ->
-            then(@test_value2, fn defer_bdaeb ->
-              bla = compare(defer_9f8d3, defer_bdaeb)
+          then(@test_value1, fn defer_03693 ->
+            then(@test_value2, fn defer_da5b1 ->
+              bla = compare(defer_03693, defer_da5b1)
               IO.inspect(bla)
             end)
           end)
@@ -205,11 +310,11 @@ defmodule DeferTest do
     expected_output =
       quote do
         def test do
-          then(@test_value1, fn defer_9f8d3 ->
-            val_1 = defer_9f8d3
+          then(@test_value1, fn defer_03693 ->
+            val_1 = defer_03693
 
-            then(@test_value2, fn defer_bdaeb ->
-              val_2 = defer_bdaeb
+            then(@test_value2, fn defer_da5b1 ->
+              val_2 = defer_da5b1
               val_1 + val_2
             end)
           end)
@@ -260,11 +365,11 @@ defmodule DeferTest do
     expected_output =
       quote do
         def test do
-          then(nested_1(), fn defer_5a695 ->
-            val_1 = defer_5a695
+          then(nested_1(), fn defer_858d4 ->
+            val_1 = defer_858d4
 
-            then(@test_value2, fn defer_bdaeb ->
-              val_2 = defer_bdaeb
+            then(@test_value2, fn defer_da5b1 ->
+              val_2 = defer_da5b1
               val_1 + val_2
             end)
           end)
