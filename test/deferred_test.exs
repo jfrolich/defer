@@ -1,12 +1,23 @@
+defmodule Test do
+  import Defer
+  alias Defer.ExampleDeferrable
+
+  defer def test do
+    val_1 = await %ExampleDeferrable{callback: fn _ -> 10 end}
+    val_2 = await %ExampleDeferrable{callback: fn _ -> 20 end}
+
+    val_1 + val_2
+  end
+end
+
 defmodule DeferTest do
   use ExUnit.Case
   doctest Defer
-  import Defer
   alias Defer.ExampleDeferrable
 
   defp do_rewrite(fun_ast) do
     {:def, def_ctx, [fun_name, do_block]} = fun_ast
-    rewrite({:def, def_ctx, [fun_name]}, do_block, __ENV__)
+    Defer.rewrite({:def, def_ctx, [fun_name]}, do_block, __ENV__)
   end
 
   def ast_to_string(ast) do
@@ -20,16 +31,14 @@ defmodule DeferTest do
       IO.puts(ast_to_string(input))
       IO.puts("\n\nExpected:\n\n")
       IO.puts(ast_to_string(expected_output))
-      # IO.inspect(expected_output)
       IO.puts("\n\nInstead got:\n\n")
       IO.puts(ast_to_string(do_rewrite(input)))
-      # IO.inspect(do_rewrite(input))
     end
 
     assert ast_to_string(expected_output) == ast_to_string(do_rewrite(input))
   end
 
-  test "then macro" do
+  test "then function" do
     first_callback = fn _ ->
       1
     end
@@ -39,7 +48,7 @@ defmodule DeferTest do
     end
 
     then_val =
-      then(
+      Defer.then(
         %ExampleDeferrable{
           callback: first_callback
         },
@@ -49,21 +58,14 @@ defmodule DeferTest do
     assert %ExampleDeferrable{} = then_val
   end
 
-  defer def test do
-    val_1 = await %ExampleDeferrable{callback: fn _ -> 10 end}
-    val_2 = await %ExampleDeferrable{callback: fn _ -> 20 end}
-
-    val_1 + val_2
-  end
-
   test "defer macro" do
-    assert %ExampleDeferrable{evaluated?: false} = test()
-    assert evaluate(test()) == 30
+    assert %ExampleDeferrable{} = Test.test()
+    assert Defer.run(Test.test()) == 30
   end
 
   test "test correct evaluation" do
     deferred_value =
-      then(
+      Defer.then(
         %ExampleDeferrable{
           callback: fn _ ->
             1
@@ -72,7 +74,7 @@ defmodule DeferTest do
         fn deferred_1__ ->
           val1 = deferred_1__
 
-          then(
+          Defer.then(
             %ExampleDeferrable{
               callback: fn _ ->
                 2
@@ -87,7 +89,7 @@ defmodule DeferTest do
         end
       )
 
-    assert evaluate(deferred_value) == 3
+    assert Defer.run(deferred_value) == 3
   end
 
   test "a case statement" do
@@ -277,7 +279,6 @@ defmodule DeferTest do
       quote do
         def test(input) do
           bla = compare(await(@test_value1), await(@test_value2))
-          IO.inspect(bla)
         end
       end
 
@@ -287,7 +288,6 @@ defmodule DeferTest do
           then(@test_value1, fn defer_03693 ->
             then(@test_value2, fn defer_da5b1 ->
               bla = compare(defer_03693, defer_da5b1)
-              IO.inspect(bla)
             end)
           end)
         end
@@ -371,6 +371,84 @@ defmodule DeferTest do
             then(@test_value2, fn defer_da5b1 ->
               val_2 = defer_da5b1
               val_1 + val_2
+            end)
+          end)
+        end
+      end
+
+    assert assert_output(input, expected_output)
+  end
+
+  @tag :wip
+  test "awaiting a list" do
+    input =
+      quote do
+        def test do
+          test = await Enum.map(&fun(&1))
+          test
+        end
+      end
+
+    expected_output =
+      quote do
+        def test do
+          then(Enum.map(&fun(&1)), fn defer_40b0b ->
+            test = defer_40b0b
+            test
+          end)
+        end
+      end
+
+    assert assert_output(input, expected_output)
+  end
+
+  test "practical example" do
+    input =
+      quote do
+        def test do
+          user = await(LazyUser.get(1))
+          best_friend = await(LazyUser.get(user.best_friend_id))
+          friend_ids = await(LazyUser.get_friend_ids(user.id, first: 5))
+          friends = await(Enum.map(friend_ids, &lazy_load_friend(&1)))
+
+          %{
+            first_name: user.first_name,
+            last_name: user.last_name,
+            best_friend: %{
+              first_name: best_friend.first_name,
+              last_name: best_friend.last_name
+            },
+            friends: friends
+          }
+        end
+      end
+
+    expected_output =
+      quote do
+        def test do
+          then(LazyUser.get(1), fn defer_c747b ->
+            user = defer_c747b
+
+            then(LazyUser.get(user.best_friend_id()), fn defer_633bd ->
+              best_friend = defer_633bd
+
+              then(LazyUser.get_friend_ids(user.id(), first: 5), fn defer_6070f ->
+                friend_ids = defer_6070f
+
+                then(Enum.map(friend_ids, &lazy_load_friend(&1)), fn defer_a4992 ->
+                  friends = defer_a4992
+
+                  %{
+                    first_name: user.first_name(),
+                    last_name: user.last_name(),
+                    best_friend: %{
+                      first_name: best_friend.first_name(),
+                      last_name: best_friend.last_name()
+                    },
+                    friends: friends
+                  }
+                end)
+              end)
             end)
           end)
         end

@@ -1,56 +1,132 @@
 defprotocol Deferrable do
   @fallback_to_any true
 
-  @spec run(t, list) :: t
-  def run(deferrable, opts \\ [])
+  @spec run(t, list) :: {t, list}
+  def run(deferrable, context \\ [])
 
-  @spec run_once(t, list) :: t
-  def run_once(deferrable, opts \\ [])
-
-  @spec get_value(t, list) :: any | nil
-  def get_value(deferrable, opts \\ [])
+  @spec run_once(t, list) :: {t, list}
+  def run_once(deferrable, context \\ [])
 
   @spec then(t, callback: (any -> any)) :: t
   def then(deferrable, callback)
+
+  @spec deferrable?(t) :: boolean
+  def deferrable?(deferrable)
 end
 
-defimpl Deferrable, for: Any do
-  defp module_from_list(list) do
-    [%{__struct__: module} | _] = list
+defmodule DeferredList do
+  @moduledoc """
+  This module is purely there to make a list thenable
+  """
+  defstruct list: nil, then: nil, context: nil
 
-    if Enum.any?(list, fn %{__struct__: m} -> m != module end),
-      do: raise("Cannot evaluated mixed deferrables")
+  def new(list) do
+    %__MODULE__{
+      list: list
+    }
+  end
+
+  defimpl Deferrable do
+    def run(deferred_list, context \\ [])
+
+    def run(%{list: list, then: nil}, context) do
+      Deferrable.run(list, context)
+    end
+
+    def run(%{list: list, then: then}, context) do
+      {list, context} = Deferrable.run(list, context)
+      result = then.(list)
+      Deferrable.run(result, context)
+    end
+
+    def run_once(deferred_list, context \\ [])
+    def run_once(%{list: list}, context), do: Deferrable.run_once(list, context)
+
+    def then(deferred_list, callback)
+
+    def then(deferred_list = %{then: nil}, callback) do
+      %{
+        deferred_list
+        | then: callback
+      }
+    end
+
+    def then(deferred_list = %{then: old_callback}, new_callback) do
+      %{
+        deferred_list
+        | then: fn prev ->
+            then(old_callback.(prev), new_callback)
+          end
+      }
+    end
+
+    def deferrable?(_), do: true
+  end
+end
+
+defimpl Deferrable, for: List do
+  defp module_from_list(list = [%{__struct__: module} | _]) do
+    if Enum.any?(list, fn
+         %{__struct__: m} -> m != module
+         _ -> false
+       end) do
+      raise("Cannot work with lists of mixed deferrables yet")
+    end
 
     module
   end
 
-  def new(_opts \\ []), do: nil
+  defp module_from_list(_), do: nil
 
-  def evaluate(val, opts \\ [])
+  def run(list, context \\ [])
+  def run([], _), do: []
 
-  def evaluate(val, opts) when is_list(val) do
-    module_from_list(val).evaluate(val, opts)
+  def run(list, context) do
+    module = module_from_list(list)
+
+    if module && Defer.deferrable?(struct(module)) do
+      module.run(list, context)
+    else
+      {list, context}
+    end
   end
 
-  def run(val, _opts), do: val
+  def run_once(list, context \\ [])
+  def run_once([], _), do: []
 
-  def run_once(val, opts \\ [])
+  def run_once(list, context) do
+    module = module_from_list(list)
 
-  def run_once(val, _opts) when is_list(val) do
-    module_from_list(val).evaluate_once(val)
+    if list && Defer.deferrable?(struct(module)) do
+      module.run_once(list, context)
+    else
+      {list, context}
+    end
   end
 
-  def run_once(val, _opts), do: val
+  def then(list, callback)
 
-  def get_value(val, opts \\ [])
-
-  def get_value(vals, opts) when is_list(vals) do
-    module_from_list(vals).get_value(vals, opts)
+  def then(list, callback) do
+    DeferredList.new(list) |> Defer.then(callback)
   end
 
-  def get_value(val, _opts), do: val
+  def deferrable?(list) do
+    Enum.any?(list, &Defer.deferrable?(&1))
+  end
+end
 
+defimpl Deferrable, for: Any do
+  def run(val, context \\ [])
+  def run(val, context), do: {val, context}
+
+  def run_once(val, context \\ [])
+  def run_once(val, context), do: {val, context}
+
+  def then(val, callback)
   def then(val, callback) when is_function(callback, 1), do: callback.(val)
+  def then(_, _), do: raise("Not a valid callback provided")
+
+  def deferrable?(_), do: false
 end
 
 defmodule Defer do
@@ -81,11 +157,14 @@ defmodule Defer do
 
   defp replace_expression(await, await, replacement), do: replacement
 
-  defp replace_expression({fun, ctx, args}, await, replacement),
-    do: {fun, ctx, replace_expression(args, await, replacement)}
-
   defp replace_expression({:do, block}, await, replacement),
     do: {:do, replace_expression(block, await, replacement)}
+
+  defp replace_expression({:->, _ctx, [_pattern, block]}, await, replacement),
+    do: {:do, replace_expression(block, await, replacement)}
+
+  defp replace_expression({fun, ctx, args}, await, replacement),
+    do: {fun, ctx, replace_expression(args, await, replacement)}
 
   defp replace_expression([arg | args], await, replacement),
     do: [
@@ -117,7 +196,7 @@ defmodule Defer do
     {:await, _, [deferred_val]} = await
 
     var = Macro.var(expression_to_var_name(deferred_val), nil)
-    substituted_clause = substitute(clause, await, var)
+    substituted_clause = replace_expression(clause, await, var)
 
     quote do
       then(unquote(deferred_val), fn unquote(var) ->
@@ -130,7 +209,7 @@ defmodule Defer do
     {:await, _, [deferred_val]} = await
 
     var = Macro.var(expression_to_var_name(deferred_val), nil)
-    substituted_clause = substitute(clause, await, var)
+    substituted_clause = replace_expression(clause, await, var)
 
     quote do
       with(unquote_splicing(coll)) do
@@ -138,6 +217,19 @@ defmodule Defer do
           unquote(rewrite_with_clauses([substituted_clause | clauses], env))
         end)
       end
+    end
+  end
+
+  defp wrap(entry, await, env) do
+    {:await, _, [deferred_val]} = await
+    var = Macro.var(expression_to_var_name(deferred_val), nil)
+
+    entry = entry |> replace_expression(await, var) |> rewrite_fun(env)
+
+    quote do
+      then(unquote(deferred_val), fn unquote(var) ->
+        unquote(entry)
+      end)
     end
   end
 
@@ -160,23 +252,23 @@ defmodule Defer do
     end
   end
 
-  defp substitute(ast, find, replace, coll \\ [])
+  # defp substitute(ast, find, replace, coll \\ [])
 
-  defp substitute(find, find, replace, _) do
-    replace
-  end
+  # defp substitute(find, find, replace, _) do
+  #   replace
+  # end
 
-  defp substitute({fun, ctx, args}, find, replace, _) do
-    {fun, ctx, substitute(args, find, replace)}
-  end
+  # defp substitute({fun, ctx, args}, find, replace, _) do
+  #   {fun, ctx, substitute(args, find, replace)}
+  # end
 
-  defp substitute([find | args], find, replace, coll) do
-    coll ++ [replace | args]
-  end
+  # defp substitute([find | args], find, replace, coll) do
+  #   coll ++ [replace | args]
+  # end
 
-  defp substitute([arg | args], find, replace, coll) do
-    substitute(args, find, replace, coll ++ [arg])
-  end
+  # defp substitute([arg | args], find, replace, coll) do
+  #   substitute(args, find, replace, coll ++ [arg])
+  # end
 
   defp remove_binding({:=, _ctx, [_binding, expr]}), do: expr
   defp remove_binding(other), do: other
@@ -274,47 +366,48 @@ defmodule Defer do
 
   defp rewrite([{:do, block}], env), do: [{:do, rewrite(block, env)}]
 
-  defp rewrite({:await, _, [fun]}, _env) do
-    # just remove the keyword
-    fun
-  end
-
-  defp rewrite(expression = {form, ctx, args}, env) when is_list(args) do
-    expanded_expression = Macro.expand(expression, env)
-
-    if expanded_expression == expression do
-      {form, ctx, rewrite_args(args, env)}
-    else
-      rewrite(expanded_expression, env)
-    end
+  defp rewrite({:await, _, [expr]}, _env) do
+    expr
   end
 
   defp rewrite(expression = {form, ctx, args}, env) do
     expanded_expression = Macro.expand(expression, env)
 
     if expanded_expression == expression do
-      {form, ctx, args}
+      rewrite_fun({form, ctx, args}, env)
     else
       rewrite(expanded_expression, env)
     end
   end
 
-  defp rewrite(exp, _env) do
-    exp
+  defp rewrite(expr, _env), do: expr
+
+  def rewrite(
+        {:def, fun_ctx, [fun_name]},
+        [do: do_block],
+        env
+      ) do
+    {:def, fun_ctx, [fun_name, [do: rewrite(do_block, env)]]}
+  end
+
+  defp do_rewrite_fun(nil, {fun, ctx, args}, env) when is_list(args),
+    do: {fun, ctx, rewrite_args(args, env)}
+
+  defp do_rewrite_fun(nil, expr, _), do: expr
+
+  defp do_rewrite_fun(await, expr, env) do
+    wrap(expr, await, env)
+  end
+
+  defp rewrite_fun(expr, env) do
+    await_shallow = get_await(expr, false, env)
+    do_rewrite_fun(await_shallow, expr, env)
   end
 
   defp rewrite_args([], _env), do: []
 
   defp rewrite_args([arg | args], env) do
     [rewrite(arg, env) | rewrite_args(args, env)]
-  end
-
-  def rewrite(
-        {:def, fun_ctx, [fun_name]},
-        do_block,
-        env
-      ) do
-    {:def, fun_ctx, [fun_name, rewrite(do_block, env)]}
   end
 
   defmacro defer(
@@ -331,13 +424,15 @@ defmodule Defer do
     )
   end
 
-  def evaluate_once(val, opts \\ []) do
-    Deferrable.run_once(val, opts)
+  def run_once(val, context \\ []) do
+    {val, _context} = Deferrable.run_once(val, context)
+    val
   end
 
-  def evaluate(val, opts \\ []) do
-    Deferrable.run(val, opts)
+  def run(val, context \\ []) do
+    {val, _context} = Deferrable.run(val, context)
+    val
   end
 
-  def get_value(deferred_value, opts \\ []), do: Deferrable.get_value(deferred_value, opts)
+  def deferrable?(val), do: Deferrable.deferrable?(val)
 end

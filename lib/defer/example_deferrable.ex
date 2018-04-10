@@ -1,29 +1,22 @@
 defmodule Defer.ExampleDeferrable do
   alias __MODULE__
-  defstruct evaluated?: false, value: nil, callback: nil
+  defstruct callback: nil
 
   def new(_opts \\ []) do
     %ExampleDeferrable{}
   end
 
   defimpl Deferrable do
-    def get_value(val, opts \\ [])
-    def get_value(%ExampleDeferrable{value: value, evaluated?: true}, _opts), do: value
-    def get_value(val, opts), do: run(val, opts) |> get_value(opts)
+    def run_once(val, context \\ [])
+    def run_once(%{callback: nil}, context), do: {nil, context}
+    def run_once(%{callback: callback}, context), do: {callback.(context[:prev]), context}
 
-    def run_once(val, opts \\ [])
-
-    def run_once(val = %ExampleDeferrable{evaluated?: true}, _), do: val
-
-    def run_once(%ExampleDeferrable{callback: callback}, opts), do: callback.(opts[:prev])
-
-    def run(val = %{evaluated?: true}), do: val
-
-    def run(val, opts) do
-      val
-      |> Deferrable.run_once(opts[:prev])
-      |> Deferrable.run([[prev: val] | opts])
+    def run(val, context) do
+      {deferrable, context} = Deferrable.run_once(val, context)
+      Deferrable.run(deferrable, Keyword.put(context, :prev, val))
     end
+
+    def then(val, callback)
 
     def then(val = %{callback: nil}, callback) do
       %{val | callback: callback}
@@ -41,5 +34,7 @@ defmodule Defer.ExampleDeferrable do
     def then(val, callback) do
       callback.(val)
     end
+
+    def deferrable?(_), do: true
   end
 end
