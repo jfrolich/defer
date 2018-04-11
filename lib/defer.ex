@@ -252,24 +252,6 @@ defmodule Defer do
     end
   end
 
-  # defp substitute(ast, find, replace, coll \\ [])
-
-  # defp substitute(find, find, replace, _) do
-  #   replace
-  # end
-
-  # defp substitute({fun, ctx, args}, find, replace, _) do
-  #   {fun, ctx, substitute(args, find, replace)}
-  # end
-
-  # defp substitute([find | args], find, replace, coll) do
-  #   coll ++ [replace | args]
-  # end
-
-  # defp substitute([arg | args], find, replace, coll) do
-  #   substitute(args, find, replace, coll ++ [arg])
-  # end
-
   defp remove_binding({:=, _ctx, [_binding, expr]}), do: expr
   defp remove_binding(other), do: other
 
@@ -334,7 +316,6 @@ defmodule Defer do
     do: wrap_with([clause | clauses], await, env, coll)
 
   defp rewrite_with_clauses(clauses, env, coll \\ [])
-
   defp rewrite_with_clauses([], env, [{:do, do_block}]), do: rewrite(do_block, env)
   defp rewrite_with_clauses([], _env, coll), do: {:with, [], coll}
 
@@ -361,9 +342,7 @@ defmodule Defer do
   end
 
   defp rewrite({:->, env, lines}, env) when is_list(lines), do: rewrite_lines(lines, env)
-
   defp rewrite({:->, env, lines}, env), do: rewrite(lines, env)
-
   defp rewrite([{:do, block}], env), do: [{:do, rewrite(block, env)}]
 
   defp rewrite({:await, _, [expr]}, _env) do
