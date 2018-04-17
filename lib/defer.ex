@@ -1,11 +1,11 @@
 defprotocol Deferrable do
   @fallback_to_any true
 
-  @spec run(t, list) :: {t, list}
+  @spec run(t, map) :: {t, map}
   def run(deferrable, context \\ [])
 
-  @spec run_once(t, list) :: {t, list}
-  def run_once(deferrable, context \\ [])
+  @spec run_once(t, map) :: {t, map}
+  def run_once(deferrable, context \\ %{})
 
   @spec then(t, callback: (any -> any)) :: t
   def then(deferrable, callback)
@@ -27,7 +27,7 @@ defmodule DeferredList do
   end
 
   defimpl Deferrable do
-    def run(deferred_list, context \\ [])
+    def run(deferred_list, context \\ %{})
 
     def run(%{list: list, then: nil}, context) do
       Deferrable.run(list, context)
@@ -39,7 +39,7 @@ defmodule DeferredList do
       Deferrable.run(result, context)
     end
 
-    def run_once(deferred_list, context \\ [])
+    def run_once(deferred_list, context \\ %{})
     def run_once(%{list: list}, context), do: Deferrable.run_once(list, context)
 
     def then(deferred_list, callback)
@@ -78,7 +78,7 @@ defimpl Deferrable, for: List do
 
   defp module_from_list(_), do: nil
 
-  def run(list, context \\ [])
+  def run(list, context \\ %{})
   def run([], _), do: []
 
   def run(list, context) do
@@ -91,7 +91,7 @@ defimpl Deferrable, for: List do
     end
   end
 
-  def run_once(list, context \\ [])
+  def run_once(list, context \\ %{})
   def run_once([], _), do: []
 
   def run_once(list, context) do
@@ -116,10 +116,10 @@ defimpl Deferrable, for: List do
 end
 
 defimpl Deferrable, for: Any do
-  def run(val, context \\ [])
+  def run(val, context \\ %{})
   def run(val, context), do: {val, context}
 
-  def run_once(val, context \\ [])
+  def run_once(val, context \\ %{})
   def run_once(val, context), do: {val, context}
 
   def then(val, callback)
@@ -403,12 +403,12 @@ defmodule Defer do
     )
   end
 
-  def run_once(val, context \\ []) do
+  def run_once(val, context \\ %{}) do
     {val, _context} = Deferrable.run_once(val, context)
     val
   end
 
-  def run(val, context \\ []) do
+  def run(val, context \\ %{}) do
     {val, _context} = Deferrable.run(val, context)
     val
   end
