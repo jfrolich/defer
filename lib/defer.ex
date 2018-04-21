@@ -26,22 +26,38 @@ defmodule DeferredList do
     }
   end
 
+  def run(deferred_list, context \\ %{})
+
+  def run(%{list: list, then: nil}, context) do
+    Deferrable.run(list, context)
+  end
+
+  def run(%{list: list, then: then}, context) do
+    {list, context} = Deferrable.run(list, context)
+    result = then.(list)
+    Deferrable.run(result, context)
+  end
+
+  def run(list, context) when is_list(list) do
+    Enum.reduce(list, {[], context}, fn item, {list, context} ->
+      {item, context} = Deferrable.run(item, context)
+      {list ++ [item], context}
+    end)
+  end
+
+  def run_once(deferred_list, context \\ %{})
+  def run_once(%{list: list}, context), do: Deferrable.run_once(list, context)
+
+  def run_once(list, context) when is_list(list) do
+    Enum.reduce(list, {[], context}, fn item, {list, context} ->
+      {item, context} = Deferrable.run_once(item, context)
+      {list ++ [item], context}
+    end)
+  end
+
   defimpl Deferrable do
-    def run(deferred_list, context \\ %{})
-
-    def run(%{list: list, then: nil}, context) do
-      Deferrable.run(list, context)
-    end
-
-    def run(%{list: list, then: then}, context) do
-      {list, context} = Deferrable.run(list, context)
-      result = then.(list)
-      Deferrable.run(result, context)
-    end
-
-    def run_once(deferred_list, context \\ %{})
-    def run_once(%{list: list}, context), do: Deferrable.run_once(list, context)
-
+    def run_once(deferred_list, context \\ %{}), do: DeferredList.run_once(deferred_list, context)
+    def run(deferred_list, context \\ %{}), do: DeferredList.run(deferred_list, context)
     def then(deferred_list, callback)
 
     def then(deferred_list = %{then: nil}, callback) do
